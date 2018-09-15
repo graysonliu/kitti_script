@@ -4,8 +4,8 @@ import matplotlib
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 import os
-import cv2
 from functools import reduce
+from tqdm import tqdm
 
 import pykitti
 
@@ -15,97 +15,6 @@ date = '2011_09_26'
 drive = '0048'
 
 dataset = pykitti.raw(basedir, date, drive)
-
-# dataset.calib:         Calibration data are accessible as a named tuple
-# dataset.timestamps:    Timestamps are parsed into a list of datetime objects
-# dataset.oxts:          List of OXTS packets and 6-dof poses as named tuples
-# dataset.camN:          Returns a generator that loads individual images from camera N
-# dataset.get_camN(idx): Returns the image from camera N at idx
-# dataset.gray:          Returns a generator that loads monochrome stereo pairs (cam0, cam1)
-# dataset.get_gray(idx): Returns the monochrome stereo pair at idx
-# dataset.rgb:           Returns a generator that loads RGB stereo pairs (cam2, cam3)
-# dataset.get_rgb(idx):  Returns the RGB stereo pair at idx
-# dataset.velo:          Returns a generator that loads velodyne scans as [x,y,z,reflectance]
-# dataset.get_velo(idx): Returns the velodyne scan at idx
-
-# Grab some data
-# second_pose = dataset.oxts[1].T_w_imu
-# first_gray = next(iter(dataset.gray))
-# first_cam1 = next(iter(dataset.cam1))
-# first_rgb = dataset.get_rgb(0)
-first_cam2 = dataset.get_cam2(0)
-first_velo = dataset.get_velo(0)
-
-
-# Display some of the data
-# np.set_printoptions(precision=12, suppress=False)
-
-
-# print('\nDrive: ' + str(dataset.drive))
-# print('\nFrame range: ' + str(dataset.frames))
-#
-# print('\nIMU-to-Velodyne transformation:\n' + str(dataset.calib.T_velo_imu))
-# print('\nGray stereo pair baseline [m]: ' + str(dataset.calib.b_gray))
-# print('\nRGB stereo pair baseline [m]: ' + str(dataset.calib.b_rgb))
-#
-# print('\nFirst timestamp: ' + str(dataset.timestamps[0]))
-# print('\nSecond IMU pose:\n' + str(second_pose))
-
-# f, ax = plt.subplots(2, 2, figsize=(15, 5))
-# ax[0, 0].imshow(first_gray[0], cmap='gray')
-# ax[0, 0].set_title('Left Gray Image (cam0)')
-#
-# ax[0, 1].imshow(first_cam1, cmap='gray')
-# ax[0, 1].set_title('Right Gray Image (cam1)')
-#
-# ax[1, 0].imshow(first_cam2)
-# ax[1, 0].set_title('Left RGB Image (cam2)')
-#
-# ax[1, 1].imshow(first_rgb[1])
-# ax[1, 1].set_title('Right RGB Image (cam3)')
-
-# f2 = plt.figure()
-# ax2 = f2.add_subplot(111, projection='3d')
-# # Plot every 100th point so things don't get too bogged down
-# velo_range = range(0, first_velo.shape[0], 100)
-# ax2.scatter(first_velo[velo_range, 0],
-#             first_velo[velo_range, 1],
-#             first_velo[velo_range, 2],
-#             c=first_velo[velo_range, 3],
-#             cmap='rainbow')
-# ax2.set_title('Third Velodyne scan (subsampled)')
-
-
-# plt.show()
-
-
-# for projecting point cloud to image
-def prepare_velo_points(pts3d_raw):
-    '''Replaces the reflectance value by 1, and tranposes the array, so
-       points can be directly multiplied by the camera projection matrix'''
-
-    pts3d = pts3d_raw
-    # Reflectance > 0
-    # pts3d = pts3d[pts3d[:, 3] > 0, :]
-    pts3d[:, 3] = 1
-    return pts3d.transpose()
-
-
-def project_velo_points_in_img(pts3d, T_cam_velo, Rrect, Prect):
-    '''Project 3D points into 2D image. Expects pts3d as a 4xN
-       numpy array. Returns the 2D projection of the points that
-       are in front of the camera only an the corresponding 3D points.'''
-
-    # 3D points in camera reference frame.
-    pts3d_cam = Rrect.dot(T_cam_velo.dot(pts3d))
-
-    # Before projecting, keep only points with z>0
-    # (points that are in fronto of the camera).
-    idx = (pts3d_cam[2, :] >= 0)
-    pts2d_cam = Prect.dot(pts3d_cam[:, idx])
-
-    return idx, pts2d_cam / pts2d_cam[2, :]
-
 
 # generate testing folder
 testing_dir = os.path.join(dataset.data_path, 'testing')
@@ -128,12 +37,16 @@ list(map(
     velodyne_list))
 
 # create test.txt, plane file and calib file
-test_list = open(os.path.join(dataset.data_path, "test.txt"), 'w')
+test_list = os.path.join(dataset.data_path, "test.txt")
+test_txt = open(test_list, 'w')
 plane_str = "# Plane\n" + "Width 4\n" + "Height 1\n" + "0 -1 0 1.65\n"
-for i in range(len(image_list)):
-    test_list.write("%06d\n" % i)
+for i in tqdm(range(len(image_list))):
+    # test.txt
+    test_txt.write("%06d\n" % i)
+    # plane file
     with open(os.path.join(plane_dir, "%06d.txt" % i), 'w') as f:
         f.write(plane_str)
+    # calib file
     with open(os.path.join(calib_dir, "%06d.txt" % i), 'w') as f:
         p0 = reduce(lambda x, y: x + " %.12e" % y, dataset.calib.P_rect_00.reshape(-1).tolist(), "")
         p1 = reduce(lambda x, y: x + " %.12e" % y, dataset.calib.P_rect_10.reshape(-1).tolist(), "")
@@ -144,37 +57,90 @@ for i in range(len(image_list)):
                                 dataset.calib.T_cam0_velo_unrect[0:3].reshape(-1).tolist(), "")
         f.write("P0:{}\nP1:{}\nP2:{}\nP3:{}\nR0_rect:{}\nTr_velo_to_cam:{}".format(p0, p1, p2, p3, r0_rect,
                                                                                    tr_velo_to_cam))
-test_list.close()
+test_txt.close()
 
-T_cam_velo = dataset.calib.T_cam0_velo_unrect
-R_rect_00 = dataset.calib.R_rect_00
-P_rect_02 = dataset.calib.P_rect_20
+# BEV
+# bev_dir = os.path.join(dataset.data_path, "bev")
+# os.system("rm -rf {}".format(bev_dir))
+# os.mkdir(bev_dir)
+#
+# for i in tqdm(range(len(image_list))):
+#     velo_data = dataset.get_velo(i)
+#     fig = plt.figure(figsize=(5, 10))
+#     ax = fig.add_subplot(111)
+#     ax.set_xlim(-30, 30)
+#     ax.set_ylim(-20, 50)
+#     ax.set_aspect('equal')
+#     velo_range = range(0, velo_data.shape[0], 5)
+#     ax.scatter(velo_data[velo_range, 1],
+#                velo_data[velo_range, 0],
+#                c=velo_data[velo_range, 3],
+#                s=0.1,
+#                cmap='rainbow')
+#     ax.set_title('Velodyne scan (Bird\'s Eye View)')
+#     plt.savefig(os.path.join(bev_dir, "%06d.png" % i), dpi=150, bbox_inches='tight')
+#     plt.close('all')
 
-velo_range = range(0, first_velo.shape[0], 4)
-first_velo = first_velo[velo_range, :]
-reflectance = first_velo[:, 3].copy()
-velo_prepared = prepare_velo_points(first_velo)
-idx, b = project_velo_points_in_img(velo_prepared, T_cam_velo, R_rect_00, P_rect_02)
-
-save_dir = os.path.join(basedir, date, "projection")
-if not os.path.exists(save_dir):
-    os.mkdir(save_dir)
-
-width, height, dpi = 1242, 375, 96
-fig = plt.figure()
-fig.set_size_inches([width / dpi, height / dpi])
-ax = plt.Axes(fig, [0, 0, 1, 1])
-ax.set_axis_off()
-fig.add_axes(ax)
-ax.set_xlim(0, width)
-ax.set_ylim(height, 0)
-ax.set_aspect('equal')
-ax.imshow(first_cam2)
-# ax.scatter(b[0, :], b[1, :], s=0.2, c=reflectance[idx], cmap='rainbow')
-fig.savefig(os.path.join(save_dir, "kk"), dpi=dpi)
-# plt.show()
-
-# create calib file
-print(dataset.calib.P_rect_20.reshape(-1))
-print(dataset.calib.R_rect_00[0:3, 0:3].reshape(-1))
-print(dataset.calib.T_cam0_velo_unrect[0:3].reshape(-1))
+# projecting point cloud to image
+# def prepare_velo_points(pts3d_raw):
+#     '''Replaces the reflectance value by 1, and tranposes the array, so
+#        points can be directly multiplied by the camera projection matrix'''
+#
+#     pts3d = pts3d_raw
+#     # Reflectance > 0
+#     # pts3d = pts3d[pts3d[:, 3] > 0, :]
+#     pts3d[:, 3] = 1
+#     return pts3d.transpose()
+#
+#
+# def project_velo_points_in_img(pts3d, T_cam_velo, Rrect, Prect):
+#     '''Project 3D points into 2D image. Expects pts3d as a 4xN
+#        numpy array. Returns the 2D projection of the points that
+#        are in front of the camera only an the corresponding 3D points.'''
+#
+#     # 3D points in camera reference frame.
+#     pts3d_cam = Rrect.dot(T_cam_velo.dot(pts3d))
+#
+#     # Before projecting, keep only points with z>0
+#     # (points that are in fronto of the camera).
+#     idx = (pts3d_cam[2, :] >= 0)
+#     pts2d_cam = Prect.dot(pts3d_cam[:, idx])
+#
+#     return idx, pts2d_cam / pts2d_cam[2, :]
+#
+#
+# T_cam_velo = dataset.calib.T_cam0_velo_unrect
+# R_rect_00 = dataset.calib.R_rect_00
+# P_rect_02 = dataset.calib.P_rect_20
+#
+# projection_dir = os.path.join(dataset.data_path, "projection")
+# os.system("rm -rf {}".format(projection_dir))
+# projection_image_dir = os.path.join(projection_dir, "image_2")
+# list(map(os.mkdir, [projection_dir, projection_image_dir]))
+# os.system("cp -r {} {}".format(calib_dir, os.path.join(projection_dir, "calib")))
+#
+# for i in tqdm(range(len(image_list))):
+#     cam_data = dataset.get_cam2(i)
+#     velo_data = dataset.get_velo(i)
+#     velo_range = range(0, velo_data.shape[0], 8)
+#     velo_data = velo_data[velo_range, :]
+#     reflectance = velo_data[:, 3].copy()
+#     velo_prepared = prepare_velo_points(velo_data)
+#     idx, b = project_velo_points_in_img(velo_prepared, T_cam_velo, R_rect_00, P_rect_02)
+#     width, height, dpi = 1242, 375, 96
+#     fig = plt.figure()
+#     fig.set_size_inches([width / dpi, height / dpi])
+#     ax = plt.Axes(fig, [0, 0, 1, 1])
+#     ax.set_axis_off()
+#     fig.add_axes(ax)
+#     ax.set_xlim(0, width)
+#     ax.set_ylim(height, 0)
+#     ax.set_aspect('equal')
+#     ax.imshow(cam_data)
+#     ax.scatter(b[0, :], b[1, :], s=0.8, c=reflectance[idx], cmap='gist_rainbow')
+#     fig.savefig(os.path.join(projection_image_dir, "%06d.png" % i), dpi=dpi)
+#     plt.close('all')
+#
+# # move data to right place
+list(map(lambda x: os.system("cp -r {} {} && rm -rf {}".format(x, "/mnt/Inside/Kitti/object", x)),
+         [testing_dir, test_list]))

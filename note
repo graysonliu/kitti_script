@@ -1,0 +1,10 @@
+# inference
+python avod/experiments/run_inference.py --checkpoint_name='avod_ssd_cars_example' --data_split='test' --ckpt_indices=-1 --device='0'
+# show prediction
+python demos/show_predictions_2d.py
+# combine images to video
+ffmpeg -r 10 -start_number 0 -i \
+/home/grayson/ws/avod-ssd/avod/data/outputs/avod_ssd_cars_example/predictions/images_2d/predictions/test/150000/0.3/%6d.png \
+-qscale:v 1 /home/grayson/Desktop/test.mp4
+# prediction的格式
+位置坐标x3(向右 上下？ 向前) 维度x3(长 宽 高) 角度x1 置信度x1 类别x1
