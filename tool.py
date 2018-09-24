@@ -16,8 +16,10 @@ drive = '0048'
 
 dataset = pykitti.raw(basedir, date, drive)
 
+des_dir = "/mnt/Inside/Kitti/object"
+
 # generate testing folder
-testing_dir = os.path.join(dataset.data_path, 'testing')
+testing_dir = os.path.join(des_dir, 'testing')
 os.system("rm -rf {}".format(testing_dir))
 image_dir = os.path.join(testing_dir, "image_2")
 velodyne_dir = os.path.join(testing_dir, "velodyne")
@@ -37,7 +39,7 @@ list(map(
     velodyne_list))
 
 # create test.txt, plane file and calib file
-test_list = os.path.join(dataset.data_path, "test.txt")
+test_list = os.path.join(des_dir, "test.txt")
 test_txt = open(test_list, 'w')
 plane_str = "# Plane\n" + "Width 4\n" + "Height 1\n" + "0 -1 0 1.65\n"
 for i in tqdm(range(len(image_list))):
@@ -142,5 +144,5 @@ test_txt.close()
 #     plt.close('all')
 #
 # # move data to right place
-list(map(lambda x: os.system("cp -r {} {} && rm -rf {}".format(x, "/mnt/Inside/Kitti/object", x)),
-         [testing_dir, test_list]))
+# list(map(lambda x: os.system("cp -r {} {} && rm -rf {}".format(x, "/mnt/Inside/Kitti/object", x)),
+#          [testing_dir, test_list]))
